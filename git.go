@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -15,13 +16,17 @@ if [ ! -d "$GOPATH/src/{{.Package}}" ]; then
 fi
 cd $GOPATH/src/{{.Package}}
 git fetch
-git checkout "{{.Rev}}"
+git checkout "{{.Rev}}"{{if .SubModule}}
+git submodule update --init --recursive{{end}}
 `))
 
+var gitSubmoduleRegex = regexp.MustCompilePOSIX("^submodule.")
+
 type git struct {
-	Package string
-	Repo    string
-	Rev     string
+	Package   string
+	Repo      string
+	Rev       string
+	SubModule bool
 }
 
 func isGit(path string) bool {
@@ -47,7 +52,21 @@ func newGit(srcDir, pkg string) (*git, error) {
 		return nil, err
 	}
 
-	return &git{Package: pkg, Repo: strings.TrimSpace(string(repo)), Rev: strings.TrimSpace(string(rev))}, nil
+	confCmd := exec.Command("git", "config", "-l")
+	confCmd.Dir = dir
+	confCmd.Stderr = os.Stderr
+	conf, err := confCmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	subModule := gitSubmoduleRegex.Find(conf) != nil
+
+	return &git{
+		Package:   pkg,
+		Repo:      strings.TrimSpace(string(repo)),
+		Rev:       strings.TrimSpace(string(rev)),
+		SubModule: subModule,
+	}, nil
 }
 
 func (g *git) print() {
